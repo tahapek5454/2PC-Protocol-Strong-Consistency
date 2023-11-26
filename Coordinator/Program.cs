@@ -1,11 +1,27 @@
+using Coordinator.Models.Contexts;
+using Coordinator.Services.Abstraction;
+using Coordinator.Services.Concrete;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 
-builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddDbContext<TwoPhaseCommitContext>(options =>
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("PostgreSQL"));
+});
+
+
+
+builder.Services.AddHttpClient("Order.API", client => client.BaseAddress = new("https://localhost:7299/"));
+builder.Services.AddHttpClient("Stock.API", client => client.BaseAddress = new("https://localhost:7068/"));
+builder.Services.AddHttpClient("Payment.API", client => client.BaseAddress = new("https://localhost:7144/"));
+
+builder.Services.AddSingleton<ITransactionService, TransactionService>();
+
 
 var app = builder.Build();
 
@@ -16,10 +32,24 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.MapGet("/create-order-transaction", async (ITransactionService transactionService) =>
+{
+    //phase 1 - prepare
+    var transactionId = await transactionService.CreateTransactionAsync();
+    await transactionService.PrepareServicesAsync(transactionId);
+    bool transactionState = await transactionService.CheckReadyServicesAsync(transactionId);
 
-app.UseAuthorization();
+    if (transactionState)
+    {
+        //phase 2 - commit
+        await transactionService.CommitAsync(transactionId);
+        transactionState = await transactionService.CheckTransactionStateServicesAsync(transactionId);
 
-app.MapControllers();
+        if(!transactionState)
+        {
+            await transactionService.RollbackAsync(transactionId);
+        }
+    }
+});
 
 app.Run();
