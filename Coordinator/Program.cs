@@ -20,7 +20,7 @@ builder.Services.AddHttpClient("Order.API", client => client.BaseAddress = new("
 builder.Services.AddHttpClient("Stock.API", client => client.BaseAddress = new("https://localhost:7068/"));
 builder.Services.AddHttpClient("Payment.API", client => client.BaseAddress = new("https://localhost:7144/"));
 
-builder.Services.AddSingleton<ITransactionService, TransactionService>();
+builder.Services.AddTransient<ITransactionService, TransactionService>();
 
 
 var app = builder.Build();
